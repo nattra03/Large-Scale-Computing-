@@ -3,10 +3,12 @@ kind: Workflow
 metadata:
   generateName: ml-agnostic-pro-
   namespace: argo
-
 spec:
   entrypoint: main-dag
 
+  # ==========================================
+  # PANEL STEROWANIA (Data-Agnostic Inputs)
+  # ==========================================
   arguments:
     parameters:
       - name: dataset-url
@@ -15,6 +17,9 @@ spec:
         value: "Outcome"
 
   templates:
+    # ==========================================
+    # 1. DEFINICJA GRAFU (DAG)
+    # ==========================================
     - name: main-dag
       dag:
         tasks:
@@ -50,27 +55,26 @@ spec:
                 - name: res-b
                   value: "{{tasks.train-decision-tree.outputs.parameters.accuracy}}"
 
+    # ==========================================
+    # 2. ZAAWANSOWANY SKRYPT ML (Mózg systemu)
+    # ==========================================
     - name: python-ml-script
       retryStrategy:
-        limit: 3
-
+        limit: "2"
       inputs:
         parameters:
           - name: url
           - name: target
           - name: algorithm
-
       script:
         image: python:3.9-slim
         command: [python]
         source: |
           import subprocess
           import sys
-          import random
 
-          if random.random() < 0.33:
-              sys.exit(1)
-
+          # Faza 0: Instalacja bibliotek (pip)
+          print("Przygotowanie srodowiska: Instalacja bibliotek...")
           subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "pandas", "scikit-learn"])
 
           import pandas as pd
@@ -81,66 +85,86 @@ spec:
           from sklearn.impute import SimpleImputer
           from sklearn.preprocessing import StandardScaler
 
+          # Faza 1: Pobieranie danych
+          print("Pobieranie danych...")
           url = "{{inputs.parameters.url}}"
           target_col = "{{inputs.parameters.target}}"
           algo_name = "{{inputs.parameters.algorithm}}"
-
           df = pd.read_csv(url)
 
+          # Faza 2: Automated Preprocessing (Data-Agnostic)
+          print("Automatyczny preprocessing: Imputacja, Encoding, Scaling...")
           y = df[target_col]
           X = df.drop(columns=[target_col])
 
+          # Rozdzielamy kolumny numeryczne i kategoryczne (tekstowe)
           num_cols = X.select_dtypes(include=['number']).columns
           cat_cols = X.select_dtypes(include=['object']).columns
 
+          # Uzupełniamy braki w liczbach średnią (Imputacja)
           if len(num_cols) > 0:
               imputer = SimpleImputer(strategy='mean')
               X[num_cols] = imputer.fit_transform(X[num_cols])
 
+          # Zamieniamy tekst na kolumny 0/1 (One-Hot Encoding)
           if len(cat_cols) > 0:
               X = pd.get_dummies(X, columns=cat_cols)
 
+          # Standaryzacja cech (Kluczowe dla Regresji)
           scaler = StandardScaler()
           X_scaled = scaler.fit_transform(X)
 
-          X_train, X_test, y_train, y_test = train_test_split(
-              X_scaled, y, test_size=0.2, random_state=42
-          )
+          # Faza 3: Podział i Trening
+          X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
 
           if algo_name == "LogisticRegression":
               model = LogisticRegression(max_iter=1000)
           else:
               model = DecisionTreeClassifier(random_state=42)
 
+          print(f"Trening modelu: {algo_name}...")
           model.fit(X_train, y_train)
           acc = accuracy_score(y_test, model.predict(X_test))
 
+          # Zapisanie wyniku do pliku dla Argo
           with open("/tmp/accuracy.txt", "w") as f:
               f.write(str(acc))
 
-          print("Accuracy:", acc)
-
+          print(f"Model {algo_name} zakonczony. Wynik: {acc}")
       outputs:
         parameters:
           - name: accuracy
             valueFrom:
               path: /tmp/accuracy.txt
+        artifacts:
+          - name: model-report
+            path: /tmp/accuracy.txt
 
+    # ==========================================
+    # 3. KROK SĘDZIEGO (Podsumowanie)
+    # ==========================================
     - name: judge-script
       inputs:
         parameters:
           - name: res-a
           - name: res-b
-
       script:
         image: python:3.9-slim
         command: [python]
         source: |
-          a = float("{{inputs.parameters.res-a}}")
-          b = float("{{inputs.parameters.res-b}}")
+          val_a = float("{{inputs.parameters.res-a}}")
+          val_b = float("{{inputs.parameters.res-b}}")
 
-          print(f"Logistic Regression: {a}")
-          print(f"Decision Tree: {b}")
+          print("\n" + "="*40)
+          print("📊 FINALNE POROWNANIE MODELI")
+          print(f"1. Logistic Regression: {val_a * 100:.2f}%")
+          print(f"2. Decision Tree:       {val_b * 100:.2f}%")
+          print("-"*40)
 
-          winner = "LogisticRegression" if a > b else "DecisionTree"
-          print(f"Winner: {winner}")
+          if val_a > val_b:
+              print("🏆 ZWYCIEZCA: LOGISTIC REGRESSION")
+          elif val_b > val_a:
+              print("🏆 ZWYCIEZCA: DECISION TREE")
+          else:
+              print("🤝 REMIS!")
+          print("="*40 + "\n")

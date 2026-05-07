@@ -3,8 +3,10 @@ kind: Workflow
 metadata:
   generateName: ml-steps-sequential-final-
   namespace: argo
+
 spec:
   entrypoint: main-steps
+
   arguments:
     parameters:
       - name: dataset-url
@@ -15,91 +17,123 @@ spec:
   templates:
     - name: main-steps
       steps:
-        # KROK 1: Regresja (Startuje jako pierwsza)
-        - - name: train-lr
-            template: python-ml-script
+        - - name: train-logistic
+            template: train-model
             arguments:
               parameters:
                 - name: algorithm
                   value: "LogisticRegression"
 
-        # KROK 2: Drzewo (Czeka grzecznie, aż LR skończy)
-        - - name: train-dt
-            template: python-ml-script
+        - - name: train-tree
+            template: train-model
             arguments:
               parameters:
                 - name: algorithm
                   value: "DecisionTree"
 
-        # KROK 3: Sędzia (Na samym końcu)
         - - name: judge-winner
-            template: judge-script
+            template: judge
             arguments:
               parameters:
-                - name: res-a
-                  value: "{{steps.train-lr.outputs.parameters.accuracy}}"
-                - name: res-b
-                  value: "{{steps.train-dt.outputs.parameters.accuracy}}"
+                - name: acc-a
+                  value: "{{steps.train-logistic.outputs.parameters.accuracy}}"
+                - name: acc-b
+                  value: "{{steps.train-tree.outputs.parameters.accuracy}}"
 
-    - name: python-ml-script
+    - name: train-model
       inputs:
         parameters:
           - name: algorithm
-      script:
-        image: python:3.9-slim
-        command: [python]
-        source: |
-          # 1. IMPORTUJEMY TYLKO TO, CO JEST W SYSTEMIE
-          import subprocess
-          import sys
 
-          # 2. INSTALUJEMY BIBLIOTEKI
-          print("Instalacja bibliotek... prosze czekac.")
-          subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "pandas", "scikit-learn"])
+      retryStrategy:
+        limit: 3
+        retryPolicy: Always
+        backoff:
+          duration: "10s"
+          factor: 2
+          maxDuration: "1m"
 
-          # 3. DOPIERO TERAZ IMPORTUJEMY PANDAS I RESZTE
-          import pandas as pd
-          from sklearn.model_selection import train_test_split
-          from sklearn.linear_model import LogisticRegression
-          from sklearn.tree import DecisionTreeClassifier
-          from sklearn.metrics import accuracy_score
-          from sklearn.preprocessing import StandardScaler
-
-          print("Pobieranie danych...")
-          url = "{{workflow.parameters.dataset-url}}"
-          target = "{{workflow.parameters.target-column}}"
-          df = pd.read_csv(url).dropna()
-
-          y = df[target]
-          X = df.drop(columns=[target]).select_dtypes(include=['number'])
-
-          X_scaled = StandardScaler().fit_transform(X)
-          X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
-
-          algo = "{{inputs.parameters.algorithm}}"
-          model = LogisticRegression() if algo == "LogisticRegression" else DecisionTreeClassifier()
-          model.fit(X_train, y_train)
-          acc = accuracy_score(y_test, model.predict(X_test))
-
-          with open("/tmp/accuracy.txt", "w") as f:
-              f.write(str(acc))
-          print(f"Zakonczono model {algo} z wynikiem {acc}")
       outputs:
         parameters:
           - name: accuracy
             valueFrom:
               path: /tmp/accuracy.txt
 
-    - name: judge-script
-      inputs:
-        parameters:
-          - name: res-a
-          - name: res-b
       script:
         image: python:3.9-slim
         command: [python]
         source: |
-          a = float("{{inputs.parameters.res-a}}")
-          b = float("{{inputs.parameters.res-b}}")
-          print(f"Logistic: {a}, Tree: {b}")
-          print(f"ZWYCIEZCA: {'Logistic' if a > b else 'Tree'}")
+          import subprocess
+          import sys
+          import random
+
+          if random.random() < 0.33:
+              sys.exit(1)
+
+
+          subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "pandas", "scikit-learn"])
+
+          import pandas as pd
+          from sklearn.model_selection import train_test_split
+          from sklearn.linear_model import LogisticRegression
+          from sklearn.tree import DecisionTreeClassifier
+          from sklearn.impute import SimpleImputer
+          from sklearn.preprocessing import StandardScaler
+          from sklearn.metrics import accuracy_score
+
+          url = "{{workflow.parameters.dataset-url}}"
+          target = "{{workflow.parameters.target-column}}"
+
+          df = pd.read_csv(url)
+
+          X = df.drop(columns=[target]).select_dtypes(include=['number'])
+          y = df[target]
+
+          num_cols = X.select_dtypes(include=['number']).columns
+          cat_cols = X.select_dtypes(include=['object']).columns
+
+          if len(num_cols) > 0:
+              imputer = SimpleImputer(strategy='mean')
+              X[num_cols] = imputer.fit_transform(X[num_cols])
+
+          if len(cat_cols) > 0:
+              X = pd.get_dummies(X, columns=cat_cols)
+
+          X = StandardScaler().fit_transform(X)
+          X_train, X_test, y_train, y_test = train_test_split(
+              X, y, test_size=0.2, random_state=42
+          )
+
+          algo = "{{inputs.parameters.algorithm}}"
+
+          if algo == "LogisticRegression":
+              model = LogisticRegression(max_iter=1000)
+          else:
+              model = DecisionTreeClassifier()
+
+          model.fit(X_train, y_train)
+          acc = accuracy_score(y_test, model.predict(X_test))
+
+          with open("/tmp/accuracy.txt", "w") as f:
+              f.write(str(acc))
+
+          print(f"Model {algo} accuracy: {acc}")
+          
+    - name: judge
+      inputs:
+        parameters:
+          - name: acc-a
+          - name: acc-b
+
+      script:
+        image: python:3.9-slim
+        command: [python]
+        source: |
+          a = float("{{inputs.parameters.acc-a}}")
+          b = float("{{inputs.parameters.acc-b}}")
+
+          print(f"Logistic Regression: {a}")
+          print(f"Decision Tree: {b}")
+
+          winner = "LogisticRegression" if a > b else "DecisionTree"
+          print(f"Winner: {winner}")
