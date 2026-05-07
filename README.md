@@ -90,4 +90,23 @@ Unlike DAG, the step-based pipeline executes tasks - identical to DAG's, in a se
 The same random failure mechanism was applied. Argo handled failures using step-level retry logic, ensuring failed steps are re-executed, completed steps are preserved, workflow continues from failure point.
 
 
+## Workflow execution
 
+1. Submitting the workflow
+
+```bash
+kubectl create -f ml-pipeline.yaml
+```
+This command submits the workflow to the Argo cluster and starts execution. After submission, Argo automatically assigns a unique name to the workflow instance and begins scheduling tasks.
+
+2. Accessing Argo Web UI
+
+To view the workflow in the browser, expose the Argo server using port forwarding:
+
+```bash
+kubectl -n argo port-forward svc/argo-server 2746:2746
+```
+
+As part of the pipeline design, a parameterization mechanism was implemented to allow full control over workflow execution without modifying the YAML code. By using the arguments section in Argo Workflows, the system was transformed into a configuration-driven pipeline, where users can dynamically control execution parameters directly from the Argo UI.
+
+## Benchmark
