@@ -114,11 +114,13 @@ As part of the pipeline design, a parameterization mechanism was implemented to 
 1. Credit Card Fraud (150MB)
 
 dataset-url: https://storage.googleapis.com/download.tensorflow.org/data/creditcard.csv
+
 target-column: Class
 
 2. Chicago Crime Reports (1.8GB)
 
 dataset-url: https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv?accessType=DOWNLOAD
+
 target-column: Arrest
 
 ## Benchmark
