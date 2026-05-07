@@ -55,7 +55,7 @@ kubectl get pods -n argo
 ```
 Used to monitor the status of deployed components (pods). The system was considered ready once all pods reached the Running state.
 
-## DAG-based ML pipeline implementation
+## DAG-based pipeline implementation
 
 After setting up the environment, a custom machine learning pipeline was implemented using Argo Workflows DAG model. The pipeline is designed to process any tabular dataset provided via URL.
 
