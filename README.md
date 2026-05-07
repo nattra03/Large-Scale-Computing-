@@ -109,4 +109,16 @@ kubectl -n argo port-forward svc/argo-server 2746:2746
 
 As part of the pipeline design, a parameterization mechanism was implemented to allow full control over workflow execution without modifying the YAML code. By using the arguments section in Argo Workflows, the system was transformed into a configuration-driven pipeline, where users can dynamically control execution parameters directly from the Argo UI.
 
+## Datasets
+
+1. Credit Card Fraud (150MB)
+
+dataset-url: https://storage.googleapis.com/download.tensorflow.org/data/creditcard.csv
+target-column: Class
+
+2. Chicago Crime Reports (1.8GB)
+
+dataset-url: https://data.cityofchicago.org/api/views/ijzp-q8t2/rows.csv?accessType=DOWNLOAD
+target-column: Arrest
+
 ## Benchmark
